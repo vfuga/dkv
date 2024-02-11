@@ -1,12 +1,12 @@
-name: py310
+name: py312
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.10.*
+  - conda=24.1.0  
+  - python=3.12.1
   - pip=24.0
   - pydantic=2.6.1
-  - conda
   - autopep8=2.0.4
   - pyyaml=6.0.1
   - tqdm=4.66.1
@@ -24,11 +24,12 @@ dependencies:
   - unsync=1.4.0
   - python-dotenv=1.0.1
 #  - sqlalchemy=2.0.25
-#  - psycopg2-binary
+  - psycopg2-binary=2.9.9
   - jupyter=1.0.0
   - pytest=8.0.0
   - aiohttp=3.9.1
   - aiofile=3.8.8
   - faker=23.1.0
   - logging_tree=1.9
-  - msgspec=0.18.6
+  - pip:
+    - msgspec==0.18.6
