@@ -1,10 +1,8 @@
 # pyright: reportOperatorIssue=false
 import msgspec
 import numpy
-# import heapq
-# import pickle
-from typing import Any, TypeVar, Optional, List, Generic, Type, cast, Tuple   # noqa
-from abc import ABC                                                           # noqa
+from typing import Any, TypeVar, Optional, List, Generic, Type, cast, Tuple, Literal   # noqa
+from tqdm.auto import tqdm  # noqa
 
 
 KeyType = TypeVar('KeyType')
@@ -13,12 +11,15 @@ ValueType = TypeVar('ValueType')
 
 class BPTree(Generic[KeyType, ValueType]):
 
-    MAX_LEAF_SIZE = 4   # максимальное количество ключей на странице
-    MAX_INODE_SIZE = 4
-    HALF_LEAF_SIZE = MAX_LEAF_SIZE // 2  # при разбивании страницы попалам
-    HALF_INODE_SIZE = MAX_INODE_SIZE // 2
-    LEAF_NODE: bool = True
-    INODE: bool = not LEAF_NODE
+    MAX_LEAF_SIZE: int = 4   # максимальное количество ключей на странице
+    MAX_INODE_SIZE: int = 4
+    HALF_LEAF_SIZE: int = MAX_LEAF_SIZE // 2  # при разбивании страницы попалам
+    HALF_INODE_SIZE: int = MAX_INODE_SIZE // 2
+
+    # HALF_INODE_SIZE = 64
+    # MAX_INODE_SIZE = HALF_INODE_SIZE * 2
+    # HALF_LEAF_SIZE = 64
+    # MAX_LEAF_SIZE = HALF_LEAF_SIZE * 2
 
     class Node(msgspec.Struct):
         node_index: int | None = None   # индекс узла в списке узлов дерева
@@ -87,14 +88,49 @@ class BPTree(Generic[KeyType, ValueType]):
     def print_node(self, node: Node):
         print()
         space = "   " * node.level
-        print(f"{space}node-idx:{node.node_index}, prev:{node.prev_node}, next:{node.next_node}, level: {node.level}, ")
+        if (node.next_node is None) and (node.prev_node is None):
+            root = " <============ *ROOT*"
+        else:
+            root = ""
+        print(f"node-idx:{node.node_index}, prev:{node.prev_node}, next:{node.next_node}, level: {node.level} {root}")
         if node.is_leaf():
             for i in node.pointers:
                 print(f"{space}|-> {self.keys[i]}")
         else:
             n = cast(BPTree.INode, node)
             for i, p in enumerate(n.pointers):
-                print(f"{space}-> {self.keys[p]}: {n.descendants[i]}, {n.descendants[i + 1]}")
+                print(f"{space}|-> {self.keys[p]}: {n.descendants[i]}, {n.descendants[i + 1]}")
+
+    def split_inode(self, inode: INode, path) -> Tuple[INode, INode]:
+        """подразумеваем, что узел полностью заполнен"""
+        new_node = cast(BPTree.INode, self.node_factory(leaf_node=False))
+        new_node.level = inode.level
+
+        # горизонтальное связывание
+        if inode.next_node is not None:
+            next_node = cast(BPTree.INode, self.tree[inode.next_node])
+            next_node.prev_node = new_node.node_index
+        inode.next_node = new_node.node_index
+        new_node.prev_node = inode.node_index
+
+        # копируем ссылки
+        new_node.pointers = inode.pointers[self.HALF_INODE_SIZE:]
+        inode.pointers = inode.pointers[:self.HALF_INODE_SIZE]
+        new_node.descendants = inode.descendants[self.HALF_INODE_SIZE:]
+        inode.descendants = inode.descendants[:self.HALF_INODE_SIZE + 1]
+
+        # вертикальное связывание
+        if len(path) == 0:   # подразумеваем, что: inode.node_index == self.root
+            n_root = cast(BPTree.INode, self.node_factory(leaf_node=False))
+            n_root.level = inode.level + 1
+            n_root.pointers = new_node.pointers[:1]
+            n_root.descendants = numpy.array([inode.node_index, new_node.node_index])
+            self.root_node = cast(int, n_root.node_index)
+        else:
+            parent_node = cast(BPTree.INode, self.tree[path.pop()])
+            self.insert_into_parent(parent_node, new_node.pointers[0], cast(int, new_node.node_index), path)
+
+        return (inode, new_node)
 
     def insert_into_parent(self, inode: INode, k_ind: int, descendant: int, path) -> int | None:
         """
@@ -107,13 +143,6 @@ class BPTree(Generic[KeyType, ValueType]):
 
         if len(inode.pointers) < self.MAX_INODE_SIZE:
 
-            # # этот код никогда не будет выполняться, потому, что уникальность проверяется в процессе
-            # # поиска места вставки
-            # if k_ind == inode.pointers[high]:
-            #     raise RuntimeError("Non unique index value")
-            # if k_ind == inode.pointers[low]:
-            #     raise RuntimeError("Non unique index value")
-
             if k < self.keys[inode.pointers[low]]:   # меньше самого маленького
                 inode.pointers = numpy.insert(inode.pointers, 0, k_ind)
                 inode.descendants = numpy.insert(inode.descendants, 1, descendant)
@@ -121,7 +150,7 @@ class BPTree(Generic[KeyType, ValueType]):
 
             if k > self.keys[inode.pointers[high]]:  # больше самого большого
                 inode.pointers = numpy.insert(inode.pointers, len(inode.pointers), k_ind)
-                inode.descendants = numpy.insert(inode.descendants, len(inode.pointers), k_ind)
+                inode.descendants = numpy.insert(inode.descendants, len(inode.pointers), descendant)
                 return k_ind
 
             while low < high:
@@ -129,10 +158,11 @@ class BPTree(Generic[KeyType, ValueType]):
                 # между которыми мы должны вставить еще один ключ (вместо high)
 
                 mid = (high + low) // 2
-                if k > self.keys[mid]:
+                if k < self.keys[inode.pointers[mid]]:
                     high = mid
-                if k < self.keys[mid]:
+                else:
                     low = mid
+
                 if mid == (high + low) // 2:  # если mid не изменится
                     break
 
@@ -141,28 +171,12 @@ class BPTree(Generic[KeyType, ValueType]):
             return k_ind
 
         else:  # len(inode.pointers) >= self.MAX_INODE_SIZE:
-            """
-               рекурсивно расщепляем родительский узел
-            """
-            new_inode = cast(BPTree.INode, self.node_factory(leaf_node=False))
-            new_inode.level = inode.level
-
-            # горизонтальное связываение
-            inode.next_node = new_inode.node_index
-            new_inode.prev_node = inode.node_index
-
-            new_inode.pointers = inode.pointers[:self.HALF_INODE_SIZE]
-            inode.pointers = inode.pointers[self.HALF_INODE_SIZE + 1:]
-            new_inode.descendants = inode.descendants[:self.HALF_INODE_SIZE + 1]
-            inode.descendants = inode.descendants[self.HALF_INODE_SIZE:]
-            if len(path) == 0:
-                new_root = cast(BPTree.INode, self.node_factory(leaf_node=False))
-                new_root.level = inode.level + 1
-                new_root.pointers = inode.pointers[:1]
-                new_root.descendants = numpy.array([new_inode.node_index, inode.node_index], numpy.int32)
-                self.root_node = cast(int, new_root.node_index)
-
-            raise NotImplementedError()
+            """расщепляем родительский узел"""
+            low_node, high_node = self.split_inode(inode, path)
+            if self.keys[k_ind] < self.keys[cast(int, high_node.pointers[0])]:
+                return self.insert_into_parent(low_node, k_ind, descendant, path)
+            else:
+                return self.insert_into_parent(high_node, k_ind, descendant, path)
 
     def split_leaf(self, leaf: LeafNode, path: list[int]) -> Tuple[LeafNode, LeafNode]:
         """
@@ -203,25 +217,25 @@ class BPTree(Generic[KeyType, ValueType]):
 
             split_key_ind: int = leaf.pointers[self.HALF_LEAF_SIZE]  # это индекс ключа по которому будем разбивать
             # создаем новый листовой узел
-            n_leaf = cast(BPTree.LeafNode, self.node_factory(leaf_node=True))
+            new_leaf = cast(BPTree.LeafNode, self.node_factory(leaf_node=True))
             # копируем указатели
-            n_leaf.pointers = leaf.pointers[self.HALF_LEAF_SIZE:]
+            new_leaf.pointers = leaf.pointers[self.HALF_LEAF_SIZE:]
             leaf.pointers = leaf.pointers[:self.HALF_LEAF_SIZE]
 
             parent_node = cast(BPTree.INode, self.tree[path.pop()])
 
-            # рекурсивное обновление верхних узлов /узел/ключ/узел-потомок/стэк-узлов)
-            self.insert_into_parent(parent_node, split_key_ind, cast(int, n_leaf.node_index), path)
-
             # горизонтальное связывание
             if leaf.next_node is not None:
-                p_leaf = self.tree[leaf.next_node]
-                p_leaf.prev_node = n_leaf.node_index
-                n_leaf.next_node = p_leaf.node_index
-            n_leaf.prev_node = leaf.node_index
-            leaf.next_node = n_leaf.node_index
+                old_next_leaf = self.tree[leaf.next_node]
+                old_next_leaf.prev_node = new_leaf.node_index
+                new_leaf.next_node = old_next_leaf.node_index
+            new_leaf.prev_node = leaf.node_index
+            leaf.next_node = new_leaf.node_index
 
-            return (leaf, n_leaf)
+            # рекурсивное обновление верхних узлов /узел/ключ/узел-потомок/стэк-узлов)
+            self.insert_into_parent(parent_node, split_key_ind, cast(int, new_leaf.node_index), path)
+
+            return (leaf, new_leaf)
 
     def get_leaf(self, idx: int) -> LeafNode | None:   # noqa
         if self.tree[idx].level == 0:
@@ -250,8 +264,6 @@ class BPTree(Generic[KeyType, ValueType]):
         if page_len >= self.MAX_LEAF_SIZE:  # если место в узле закончилось
             # расщепить страницы и вставить в ту страницу, куда полагается
             low_node, high_node = self.split_leaf(leaf, path)
-            if k == self.keys[high_node.pointers[0]]:
-                raise Exception("Этот код не должен выполняться")
             if k < self.keys[high_node.pointers[0]]:
                 return self.insert_into_leaf(low_node, k, path)
             else:
@@ -316,9 +328,15 @@ class BPTree(Generic[KeyType, ValueType]):
 
             low, high = 0, len(node.pointers) - 1
 
+            if key == self.keys[node.pointers[low]]:
+                return None
+
             if key < self.keys[node.pointers[low]]:  # меньше самого маленького
                 node: BPTree.Node = self.tree[cast(BPTree.INode, node).descendants[0]]
                 continue
+
+            if key == self.keys[node.pointers[high]]:
+                return None
 
             if key > self.keys[node.pointers[high]]:  # больше самого большого
                 # переход на самую последнюю страницу в ссылках
@@ -328,8 +346,6 @@ class BPTree(Generic[KeyType, ValueType]):
             while low < high:  # ключ где-то в середине
                 mid = (low + high) // 2
                 if key == self.keys[node.pointers[mid]]:
-                    # ключи точно совпадают (полагаем, что все ключи уникальные)
-                    # т.е. такой ключ уже есть
                     return None
                 if key < self.keys[node.pointers[mid]]:
                     high = mid
@@ -339,16 +355,41 @@ class BPTree(Generic[KeyType, ValueType]):
                     # если средний элемент не изменится
                     # получилось, что ключ находится между
                     # идем в сторону меньшего
-                    node = self.tree[cast(BPTree.INode, node).descendants[low + 1]]
+                    node = self.tree[cast(BPTree.INode, node).descendants[high]]
                     break
 
         # листовой узел найден, можем вставлять
         return self.insert_into_leaf(cast(BPTree.LeafNode, node), key, path)
 
+    def min(self) -> Tuple[LeafNode, KeyType]:
+        node = cast(BPTree.Node, self.tree[self.root_node])
+        while True:
+            if node.is_leaf():
+                return (cast(BPTree.LeafNode, node), self.keys[node.pointers[0]])
+            else:
+                node = cast(BPTree.INode, node)
+                node = self.tree[node.descendants[0]]
+
+    def validate_node(self, node_index: int) -> int:
+        err_cnt = 0
+        node = self.tree[node_index]
+        for i, ptr in enumerate(node.pointers):
+            if i == 0:  # пропускаем самый первый указатель
+                continue
+            prev_ptr = cast(int, node.pointers[i - 1])
+            if (kn := self.keys[ptr]) <= (kp := self.keys[prev_ptr]):
+                err_cnt += 1
+                print(f"ERROR: wrong order: node_index: {node.node_index}/{i - 1}/{i}: {kp} >= {kn}")
+
+        if node.prev_node is not None:
+            prev_node = cast(BPTree.Node, self.tree[node.prev_node])
+            if (kp := self.keys[prev_node.pointers[-1]]) >= (kn := self.keys[node.pointers[0]]):
+                err_cnt += 1
+                print(f"ERROR: wrong node linking: {node.node_index}/{prev_node.node_index}: {kp}, {kn}")
+        return err_cnt
+
     def validate(self) -> dict[str, str]:
-        """
-            в случае успеха - возвращается пустой словарь
-        """
+        """в случае успеха - возвращается пустой словарь (т.е. без ошибок)"""
         result: dict[str, str] = {}
 
         prev_references: set[int] = set()
@@ -370,6 +411,9 @@ class BPTree(Generic[KeyType, ValueType]):
             if i != cast(int, n.node_index):
                 result["Wrong node index:"] = f"{i} -> {n.node_index}"
 
+            if (err_cnt := self.validate_node(i)) > 0:
+                result["Node currupted:"] = f"node:{i}, errors count:{err_cnt}"
+
             if n.is_leaf():
                 if n.next_node is None:
                     num_last_leaves += 1
@@ -378,89 +422,56 @@ class BPTree(Generic[KeyType, ValueType]):
 
             if n.prev_node and (n.prev_node not in prev_references):
                 prev_references.add(n.prev_node)
+            elif n.prev_node in prev_references:
+                result["Too many prev_references for node:"] = f"{i} -> BAD: {n.prev_node}"
             elif n.prev_node:
-                result["Wrong reference to a previous node:"] = f"{i} -> {n.prev_node}"
+                if not self.tree[n.prev_node].next_node == n.node_index:
+                    result["Wrong reference to a previous node:"] = f"{i} -> {n.prev_node}"
 
             if n.next_node and (n.next_node not in next_references):
                 next_references.add(cast(int, n.next_node))
+            elif n.next_node in next_references:
+                result["Too many next_references for node:"] = f"{i} -> BAD: {n.next_node}"
             elif n.next_node:
-                result["Wrong reference to a next node:"] = f"{i} -> {n.next_node}"
+                if not self.tree[n.next_node].prev_node == n.node_index:
+                    result["Wrong reference to a next node:"] = f"{i} -> {n.next_node}"
 
         return result
 
+    def print(self, msg: Any = "") -> None:
+        print(self.validate())
+        for i, n in enumerate(self.tree):
+            self.print_node(n)
+        print("\u2500" * 120)
+        node, k = self.min()
+        print("first leaf:", node)
+        print("min key:", k)
+        print(f"-> {msg}")
 
-class PKey(msgspec.Struct, frozen=True, order=True):
-    name: str
-    pass
-
-
-class Data(msgspec.Struct, frozen=False):
-    name: str
-    birth: str
-
-
-# создаем индекс
-index = BPTree[PKey, Data]()
-# print(index.root, index.keys, index.tree)
 
 if __name__ == "__main__":
+    import pickle
+    with open("POC-and-TESTS/data.dat", "rb") as f:
+        data: list[str] = pickle.load(f)
 
-    def print_index():
-        print("\u2500" * 80)
-        print(index.validate())
-        for i, n in enumerate(index.tree):
-            index.print_node(n)
+    # for n in data:
+    #     print(n)
 
-    lnode = index.get_leaf(index.root_node)
-    if lnode:
-        index.insert(PKey("50"))
-        index.insert(PKey("40"))
-        index.insert(PKey("60"))
-        index.insert(PKey("0"))
+    BPTree.HALF_INODE_SIZE = 64
+    BPTree.MAX_INODE_SIZE = BPTree.HALF_INODE_SIZE * 2
+    BPTree.HALF_LEAF_SIZE = 64
+    BPTree.MAX_LEAF_SIZE = BPTree.HALF_LEAF_SIZE * 2
 
-        print(index.insert(PKey("10")))
+    class MyKey(msgspec.Struct, frozen=True, order=True):
+        full_name: str
 
-        print(index.insert(PKey("10")))
-        print_index()
-        print(index.insert(PKey("1")))
-        print_index()
-        print(index.insert(PKey("30")))
-        print_index()
+    class Data(msgspec.Struct):
+        data: Any
 
-        print(index.insert(PKey("20")))
-        print_index()
-        print(index.insert(PKey("70")))
-        print_index()
-        print(index.insert(PKey("35")))   # неправильно меняет родительский узел
-        print_index()
-        print("\n\n" + str(index.insert(PKey("35"))))
-        print_index()
+    index = BPTree[MyKey, Data]()
 
-        print(index.insert(PKey("10")))
-        print(index.insert(PKey("10")))
-        print(index.insert(PKey("30")))
-        print_index()
-        print(index.insert(PKey("45")))
-        print_index()
-        print(index.insert(PKey("48")))
-        print_index()
-        print(index.insert(PKey("46")))
-        print_index()
-        print(index.insert(PKey("41")))
-        print_index()
-        # print(index.insert(PKey("70")))
-        # print(index.insert(PKey("70")))
-        # print(index.insert(PKey("77")))
-        # print(index.insert(PKey("79")))
-        # print(index.insert(PKey("80")))
-        # print(index.insert(PKey("80")))
+    for n in tqdm(data[:-1]):
+        index.insert(MyKey(n))
 
-        # lnode.print(index.keys)
-
-        # index._leaf_insert(lnode, PKey("2"))
-        # index._leaf_insert(lnode, PKey("A"))
-        # # index._leaf_insert(lnode, PKey("B"))
-        # # index._leaf_insert(lnode, PKey("A"))
-        # # index._leaf_insert(lnode, PKey("C"))
-        # # index._leaf_insert(lnode, PKey("D"))
-        # # index._leaf_insert(lnode, PKey("E"))
+    index.insert(MyKey(data[-1]))
+    print(index.validate())
