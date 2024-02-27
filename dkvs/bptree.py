@@ -450,32 +450,3 @@ class BPTree(Generic[KeyType, ValueType]):
         print("first leaf:", node)
         print("min key:", k)
         print(f"-> {msg}")
-
-
-if __name__ == "__main__":
-    import pickle
-    with open("POC-and-TESTS/data.dat", "rb") as f:
-        data: list[str] = pickle.load(f)
-
-    # for n in data:
-    #     print(n)
-
-    BPTree.HALF_INODE_SIZE = 64
-    BPTree.MAX_INODE_SIZE = BPTree.HALF_INODE_SIZE * 2
-    BPTree.HALF_LEAF_SIZE = 64
-    BPTree.MAX_LEAF_SIZE = BPTree.HALF_LEAF_SIZE * 2
-
-    class MyKey(msgspec.Struct, frozen=True, order=True):
-        full_name: str
-
-    class Data(msgspec.Struct):
-        data: Any
-
-    index = BPTree[MyKey, Data]()
-
-    for n in tqdm(data[:-1], desc="Loading data"):
-        index.insert(MyKey(n))
-    print(index.validate())
-
-    index.insert(MyKey(data[-1]))
-    print(index.validate())
