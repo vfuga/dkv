@@ -30,6 +30,19 @@ conda env create -f environment-py312.yml
   - после процедуры расщепления определяется в какую из двух незаполненных таблиц нужно вставить запись
   - поэтому процедуре расщепления необходимо знать лишь ключ по которому расщепление было выполнено + код узла, на которорый переходить
 
+DONE:
+- insert: key
+- validate BPTree
+- min
 
 TODO:
-- validate BPTree
+- find: == key
+- UPSERT: key
+- UPDATE: key
+- UPSERT: key
+
+- find: >, >= key + cursor
+- find: <, <= key + cursor
+
+- max
+- DELETE: key
