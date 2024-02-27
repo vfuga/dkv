@@ -103,13 +103,16 @@ class BPTree(Generic[KeyType, ValueType]):
 
     def split_inode(self, inode: INode, path) -> Tuple[INode, INode]:
         """подразумеваем, что узел полностью заполнен"""
+
+        # new_node станет следующим за inode
         new_node = cast(BPTree.INode, self.node_factory(leaf_node=False))
         new_node.level = inode.level
 
         # горизонтальное связывание
         if inode.next_node is not None:
-            next_node = cast(BPTree.INode, self.tree[inode.next_node])
-            next_node.prev_node = new_node.node_index
+            old_next_node = cast(BPTree.INode, self.tree[inode.next_node])
+            new_node.next_node = old_next_node.node_index
+            old_next_node.prev_node = new_node.node_index
         inode.next_node = new_node.node_index
         new_node.prev_node = inode.node_index
 
@@ -117,7 +120,7 @@ class BPTree(Generic[KeyType, ValueType]):
         new_node.pointers = inode.pointers[self.HALF_INODE_SIZE:]
         inode.pointers = inode.pointers[:self.HALF_INODE_SIZE]
         new_node.descendants = inode.descendants[self.HALF_INODE_SIZE:]
-        inode.descendants = inode.descendants[:self.HALF_INODE_SIZE + 1]
+        inode.descendants = inode.descendants[:self.HALF_INODE_SIZE + 1]  # нужно скопировать на один узел больше
 
         # вертикальное связывание
         if len(path) == 0:   # подразумеваем, что: inode.node_index == self.root
@@ -219,10 +222,10 @@ class BPTree(Generic[KeyType, ValueType]):
             # создаем новый листовой узел
             new_leaf = cast(BPTree.LeafNode, self.node_factory(leaf_node=True))
             # копируем указатели
-            new_leaf.pointers = leaf.pointers[self.HALF_LEAF_SIZE:]
-            leaf.pointers = leaf.pointers[:self.HALF_LEAF_SIZE]
+            new_leaf.pointers = leaf.pointers[self.HALF_LEAF_SIZE:]  # большие значения ключей
+            leaf.pointers = leaf.pointers[:self.HALF_LEAF_SIZE]  # маленькие значения
 
-            parent_node = cast(BPTree.INode, self.tree[path.pop()])
+            parent_node = cast(BPTree.INode, self.tree[path.pop()])  # родительский узел
 
             # горизонтальное связывание
             if leaf.next_node is not None:
@@ -470,8 +473,9 @@ if __name__ == "__main__":
 
     index = BPTree[MyKey, Data]()
 
-    for n in tqdm(data[:-1]):
+    for n in tqdm(data[:-1], desc="Loading data"):
         index.insert(MyKey(n))
+    print(index.validate())
 
     index.insert(MyKey(data[-1]))
     print(index.validate())
