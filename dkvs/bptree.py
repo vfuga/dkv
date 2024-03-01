@@ -382,6 +382,58 @@ class BPTree(Generic[KeyType, ValueType]):
                 node = cast(BPTree.INode, node)
                 node = self.tree[node.descendants[-1]]
 
+    def find(self, key: KeyType) -> int | None:
+        """возвращает индекс ключа"""
+        node = cast(BPTree.Node, self.tree[self.root_node])
+        while True:
+            if node.is_leaf():
+                low, high = 0, len(node.pointers) - 1
+                if self.keys[node.pointers[low]] == key:
+                    return node.pointers[low]
+                if self.keys[node.pointers[high]] == key:
+                    return node.pointers[high]
+                if key > self.keys[node.pointers[high]]:
+                    return None
+                if key < self.keys[node.pointers[low]]:
+                    return None
+                while low < high:
+                    mid = (low + high) // 2
+                    mid_key = self.keys[node.pointers[mid]]
+                    if mid_key == key:
+                        return node.pointers[mid]
+                    if mid_key > key:
+                        high = mid
+                    else:
+                        low = mid
+                    if mid == (low + high) // 2:
+                        return None
+            else:
+                low, high = 0, len(node.pointers) - 1
+                node = cast(BPTree.INode, node)
+                if key >= self.keys[node.pointers[high]]:
+                    node = self.tree[node.descendants[high + 1]]
+                    continue
+                if key == self.keys[node.pointers[low]]:
+                    node = self.tree[node.descendants[low + 1]]
+                    continue
+                if key < self.keys[node.pointers[low]]:
+                    node = self.tree[node.descendants[low]]
+                    continue
+
+                while low < high:
+                    node = cast(BPTree.INode, node)
+                    mid = (low + high) // 2
+                    if key == self.keys[node.pointers[mid]]:
+                        node = self.tree[node.descendants[mid + 1]]
+                        break
+                    if key > self.keys[node.pointers[mid]]:
+                        low = mid
+                    else:
+                        high = mid
+                    if (low + high) // 2 == mid:  # если ключ больше не поменяется
+                        node = self.tree[node.descendants[high]]  # то же что и self.tree[node.descendants[low + 1]]
+                        break
+
     def validate_node(self, node_index: int) -> int:
         err_cnt = 0
         node = self.tree[node_index]
@@ -459,3 +511,44 @@ class BPTree(Generic[KeyType, ValueType]):
         print("first leaf:", node)
         print("min key:", k)
         print(f"-> {msg}")
+
+
+if __name__ == "__main__":
+    import faker
+    BPTree.HALF_INODE_SIZE = 5
+    BPTree.MAX_INODE_SIZE = BPTree.HALF_INODE_SIZE * 2
+    BPTree.HALF_LEAF_SIZE = 5
+    BPTree.MAX_LEAF_SIZE = BPTree.HALF_LEAF_SIZE * 2
+
+    class MyKey(msgspec.Struct, frozen=True, order=True):
+        full_name: str
+
+    class Data(msgspec.Struct):
+        data: Any
+
+    index = BPTree[MyKey, Data]()
+    faker.Faker.seed(1)
+    fake = faker.Faker("ru_RU")
+    numpy.random.seed(1)
+
+    data = []
+
+    for i in tqdm(range(20000)):
+        val = numpy.random.randint(0, 999999)
+        k = MyKey(f"{val:06}")
+        index.insert(k)
+        print(data.append(k), k)
+
+    print(index.min()[1])
+    print(index.max()[1])
+
+    index.print_node(index.tree[0])
+
+    print("\u2500" * 50)
+    for k in data:
+        id = index.find(k)
+        if id is not None:
+            print(f"found: {id} -> {index.keys[id]}")
+        else:
+            index.find(k)
+            print(f"Key: {k} not found")
