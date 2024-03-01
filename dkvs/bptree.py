@@ -373,6 +373,15 @@ class BPTree(Generic[KeyType, ValueType]):
                 node = cast(BPTree.INode, node)
                 node = self.tree[node.descendants[0]]
 
+    def max(self) -> Tuple[LeafNode, KeyType]:
+        node = cast(BPTree.Node, self.tree[self.root_node])
+        while True:
+            if node.is_leaf():
+                return (cast(BPTree.LeafNode, node), self.keys[node.pointers[-1]])
+            else:
+                node = cast(BPTree.INode, node)
+                node = self.tree[node.descendants[-1]]
+
     def validate_node(self, node_index: int) -> int:
         err_cnt = 0
         node = self.tree[node_index]
