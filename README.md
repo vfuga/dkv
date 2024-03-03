@@ -31,18 +31,25 @@ conda env create -f environment-py312.yml
   - поэтому процедуре расщепления необходимо знать лишь ключ по которому расщепление было выполнено + код узла, на которорый переходить
 
 DONE:
-- insert: key
+- INSERT: key
 - validate BPTree
 - min
+- find: == key
+- max
 
 TODO:
-- find: == key
+- change_log_id - идентификатор изменения лога
+
 - UPSERT: key
 - UPDATE: key
 - UPSERT: key
 
-- find: >, >= key + cursor
-- find: <, <= key + cursor
+- scan: >, >= key
+- scan: <, <= key
 
-- max
 - DELETE: key
+
+TODO:
+- Raft consensus algorithm - для кластерной версии
+- удаленные записи (их идентификаторы) должны сохраниться и переиспользоваться новыми записями
+
