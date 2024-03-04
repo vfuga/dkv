@@ -386,8 +386,8 @@ class BPTree(Generic[KeyType, ValueType]):
     def find(self, key: KeyType) -> Tuple[int | None, LeafNode | None, int | None]:
         """
             возвращает индекс ключа
-            - несмотря на то, что нам не обязательно в некоторых случаях опускаться до листов дерева
-              все равно делаем это - для реализации удаления
+            - несмотря на то, что нам не обязательно в некоторых случаях опускаться до листов дерева,
+              все равно делаем это - пригодится при реализации сканирования индекса (по диапазону ключей).
         """
         node = cast(BPTree.Node, self.tree[self.root_node])
         while True:
@@ -521,45 +521,3 @@ class BPTree(Generic[KeyType, ValueType]):
         print("min key:", k)
         print(f"-> {msg}")
 
-
-if __name__ == "__main__":
-    import faker
-    BPTree.HALF_INODE_SIZE = 5
-    BPTree.MAX_INODE_SIZE = BPTree.HALF_INODE_SIZE * 2
-    BPTree.HALF_LEAF_SIZE = 5
-    BPTree.MAX_LEAF_SIZE = BPTree.HALF_LEAF_SIZE * 2
-
-    class MyKey(msgspec.Struct, frozen=True, order=True):
-        full_name: str
-
-    class Data(msgspec.Struct):
-        data: Any
-
-    index = BPTree[MyKey, Data]()
-    faker.Faker.seed(1)
-    fake = faker.Faker("ru_RU")
-    numpy.random.seed(1)
-
-    data = []
-
-    for i in tqdm(range(20000)):
-        val = numpy.random.randint(0, 999999)
-        k = MyKey(f"{val:06}")
-        index.insert(k)
-        print(data.append(k), k)
-
-    print(index.min()[1])
-    print(index.max()[1])
-
-    index.print_node(index.tree[0])
-
-    index.find(MyKey("7524"))
-
-    print("\u2500" * 50)
-    for k in data:
-        id = index.find(k)[0]
-        if id is not None:
-            print(f"found: {id} -> {index.keys[id]}")
-        else:
-            index.find(k)
-            print(f"Key: {k} not found")
