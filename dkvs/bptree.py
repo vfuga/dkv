@@ -520,4 +520,3 @@ class BPTree(Generic[KeyType, ValueType]):
         print("first leaf:", node)
         print("min key:", k)
         print(f"-> {msg}")
-

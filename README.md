@@ -38,7 +38,9 @@ DONE:
 - max
 
 TODO:
-- traverse
+- copy()
+- async copy() - создает копию индекса без удаленных записей
+
 - change_log_id - идентификатор изменения лога
 
 - UPSERT: key
