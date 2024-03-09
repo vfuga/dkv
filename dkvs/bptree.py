@@ -64,6 +64,7 @@ class BPTree(Generic[KeyType, ValueType]):
     def __init__(self):
         self.tree: List[BPTree.LeafNode | BPTree.INode | BPTree.Node] = []  # массив узлов дерева
         self.keys: List[KeyType] = []      # массив с ключами
+        self.values: List[ValueType | None] = []  # массив значений
 
         # создание корневого узла
         _ = self.node_factory()
@@ -250,7 +251,9 @@ class BPTree(Generic[KeyType, ValueType]):
             return cast(BPTree.INode, self.tree[idx])
         return None
 
-    def insert_into_leaf(self, leaf: LeafNode, k: KeyType, path: list[int]) -> Tuple[int | None, int | None]:
+    def insert_into_leaf(self,
+                         leaf: LeafNode, k: KeyType, path: list[int], value: ValueType
+                         ) -> Tuple[int | None, int | None]:
         """
             вставка в листовой узел.
             keys - список, куда будет добавлен новый ключ
@@ -269,14 +272,15 @@ class BPTree(Generic[KeyType, ValueType]):
             # расщепить страницы и вставить в ту страницу, куда полагается
             low_node, high_node = self.split_leaf(leaf, path)
             if k < self.keys[high_node.pointers[0]]:
-                return self.insert_into_leaf(low_node, k, path)
+                return self.insert_into_leaf(low_node, k, path, value)
             else:
-                return self.insert_into_leaf(high_node, k, path)
+                return self.insert_into_leaf(high_node, k, path, value)
 
         # если узел пустой
         if page_len == 0:
             key_ptr = len(self.keys)
             self.keys.append(k)
+            self.values.append(value)
             leaf.pointers = numpy.insert(leaf.pointers, 0, key_ptr)
             return (key_ptr, None)
 
@@ -289,24 +293,38 @@ class BPTree(Generic[KeyType, ValueType]):
         if k < self.keys[leaf.pointers[low]]:
             key_ptr = len(self.keys)
             self.keys.append(k)
+            self.values.append(value)
             leaf.pointers = numpy.insert(leaf.pointers, 0, key_ptr)
             return (key_ptr, None)
         if k == self.keys[leaf.pointers[high]]:  # уникальность
-            return (None, leaf.pointers[high])
+            if self.values[leaf.pointers[high]] is None:
+                self.values[leaf.pointers[high]] = value
+                return (leaf.pointers[high], None)
+            else:
+                return (None, leaf.pointers[high])
 
         # если искомый элемент больше самого большого
         if k > self.keys[leaf.pointers[high]]:
             key_ptr = len(self.keys)
             self.keys.append(k)
+            self.values.append(value)
             leaf.pointers = numpy.insert(leaf.pointers, page_len, key_ptr)
             return (key_ptr, None)
         if k == self.keys[leaf.pointers[high]]:  # уникальность
-            return (None, leaf.pointers[high])
+            if self.values[leaf.pointers[high]] is None:
+                self.values[leaf.pointers[high]] = value
+                return (leaf.pointers[high], None)
+            else:
+                return (None, leaf.pointers[high])
 
         while low < high:
             mid = (high + low) // 2
             if self.keys[leaf.pointers[mid]] == k:  # уникальность
-                return (None, leaf.pointers[mid])
+                if self.values[leaf.pointers[mid]] is None:
+                    self.values[leaf.pointers[mid]] = value
+                    return (leaf.pointers[mid], None)
+                else:
+                    return (None, leaf.pointers[mid])
             if self.keys[leaf.pointers[mid]] > k:
                 high = mid
             else:
@@ -316,10 +334,11 @@ class BPTree(Generic[KeyType, ValueType]):
 
         key_ptr = len(self.keys)
         self.keys.append(k)
+        self.values.append(value)
         leaf.pointers = numpy.insert(leaf.pointers, high, key_ptr)
         return (key_ptr, None)
 
-    def insert(self, key: KeyType) -> Tuple[int | None, int | None]:
+    def insert(self, key: KeyType, value: ValueType | None = None) -> Tuple[int | None, int | None]:
         """
             Вставка ключа: возвращаем индекс в массиве ключей в случае удачи либо None
             - поиск листового узла, куда вставим новый объект
@@ -333,14 +352,22 @@ class BPTree(Generic[KeyType, ValueType]):
             low, high = 0, len(node.pointers) - 1
 
             if key == self.keys[node.pointers[low]]:
-                return (None, node.pointers[low])  # найден дубликат
+                if key == self.values[node.pointers[low]] is None:
+                    self.values[node.pointers[low]] = value
+                    return (node.pointers[low], None)  # вставляем удаленное значение
+                else:
+                    return (None, node.pointers[low])  # найден дубликат
 
             if key < self.keys[node.pointers[low]]:  # меньше самого маленького
                 node: BPTree.Node = self.tree[cast(BPTree.INode, node).descendants[0]]
                 continue
 
             if key == self.keys[node.pointers[high]]:
-                return (None, node.pointers[high])  # найден дубликат
+                if self.values[node.pointers[high]] is None:
+                    self.values[node.pointers[high]] = value
+                    return (node.pointers[high], None)  # вставляем удалянное значение
+                else:
+                    return (None, node.pointers[high])  # найден дубликат
 
             if key > self.keys[node.pointers[high]]:  # больше самого большого
                 # переход на самую последнюю страницу в ссылках
@@ -350,7 +377,11 @@ class BPTree(Generic[KeyType, ValueType]):
             while low < high:  # ключ где-то в середине
                 mid = (low + high) // 2
                 if key == self.keys[node.pointers[mid]]:
-                    return (None, node.pointers[mid])  # найден дубликат
+                    if self.values[node.pointers[mid]] is None:
+                        self.values[node.pointers[mid]] = value
+                        return (node.pointers[mid], None)
+                    else:
+                        return (None, node.pointers[mid])  # найден дубликат
                 if key < self.keys[node.pointers[mid]]:
                     high = mid
                 else:   # т.е.  key > self.keys[node.pointers[mid]]:
@@ -363,7 +394,7 @@ class BPTree(Generic[KeyType, ValueType]):
                     break
 
         # листовой узел найден, можем вставлять
-        return self.insert_into_leaf(cast(BPTree.LeafNode, node), key, path)
+        return self.insert_into_leaf(cast(BPTree.LeafNode, node), key, path, cast(ValueType, value))
 
     def min(self) -> Tuple[LeafNode, KeyType]:
         node = cast(BPTree.Node, self.tree[self.root_node])
