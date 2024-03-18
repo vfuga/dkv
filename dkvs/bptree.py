@@ -416,9 +416,10 @@ class BPTree(Generic[KeyType, ValueType]):
 
     def find(self, key: KeyType) -> Tuple[int | None, LeafNode | None, int | None]:
         """
-            возвращает индекс ключа
+            возвращает (индекс ключа если найден, лист, индекс ключа, если был удален)
             - несмотря на то, что нам не обязательно в некоторых случаях опускаться до листов дерева,
               все равно делаем это - пригодится при реализации сканирования индекса (по диапазону ключей).
+              (это нужно для сканирования по ключу)
         """
         node = cast(BPTree.Node, self.tree[self.root_node])
         while True:
@@ -538,6 +539,15 @@ class BPTree(Generic[KeyType, ValueType]):
                     result["Wrong reference to a next node:"] = f"{i} -> {n.next_node}"
 
         return result
+
+    def delete(self, key: KeyType) -> bool:
+        """
+
+        """
+        if (res := self.find(key)[0]) is not None:
+            self.values[res] = None
+            return True
+        return False
 
     def print(self, msg: Any = "") -> None:
         """
