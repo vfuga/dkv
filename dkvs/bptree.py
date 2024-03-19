@@ -416,7 +416,7 @@ class BPTree(Generic[KeyType, ValueType]):
 
     def find(self, key: KeyType) -> Tuple[int | None, LeafNode | None, int | None]:
         """
-            возвращает (индекс ключа если найден, лист, индекс ключа, если был удален)
+            возвращает (сохраненные данные | None, лист, индекс в массиве ключей/данных)
             - несмотря на то, что нам не обязательно в некоторых случаях опускаться до листов дерева,
               все равно делаем это - пригодится при реализации сканирования индекса (по диапазону ключей).
               (это нужно для сканирования по ключу)
@@ -426,19 +426,19 @@ class BPTree(Generic[KeyType, ValueType]):
             if node.is_leaf():
                 node = cast(BPTree.LeafNode, node)
                 low, high = 0, len(node.pointers) - 1
-                if self.keys[node.pointers[low]] == key:
-                    return (node.pointers[low], node, low)
-                if self.keys[node.pointers[high]] == key:
-                    return (node.pointers[high], node, high)
+                if self.keys[(idx := node.pointers[low])] == key:
+                    return (self.values[idx], node, idx)
+                if self.keys[(idx := node.pointers[high])] == key:
+                    return (self.values[idx], node, idx)
                 if key > self.keys[node.pointers[high]]:
                     return (None, None, None)
                 if key < self.keys[node.pointers[low]]:
                     return (None, None, None)
                 while low < high:
                     mid = (low + high) // 2
-                    mid_key = self.keys[node.pointers[mid]]
+                    mid_key = self.keys[(ind := node.pointers[mid])]
                     if mid_key == key:
-                        return (node.pointers[mid], node, mid)
+                        return (self.values[ind], node, node.pointers[mid])
                     if mid_key > key:
                         high = mid
                     else:
@@ -542,11 +542,15 @@ class BPTree(Generic[KeyType, ValueType]):
 
     def delete(self, key: KeyType) -> bool:
         """
-
+            Помечаем, что ключ удален
         """
-        if (res := self.find(key)[0]) is not None:
-            self.values[res] = None
-            return True
+        res = self.find(key)
+        if (idx := res[2]) is not None:
+            if self.values[idx] is None:
+                return False
+            else:
+                self.values[idx] = None
+                return True
         return False
 
     def print(self, msg: Any = "") -> None:
