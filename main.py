@@ -25,5 +25,4 @@ if __name__ == "__main__":
         # bucket: int = random.randint(0, 16)  # автоматически будет сгенерировано
         data: Any = None  # данные
 
-
     tree = dkvs.bptree.BPTree[Key, Value]()
